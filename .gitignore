@@ -1,0 +1,5 @@
+# ansible
+*.retry
+*.vault
+rootkey.csv
+aws.key.pem
