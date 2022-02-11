@@ -3,3 +3,4 @@
 *.vault
 rootkey.csv
 aws.key.pem
+venv
