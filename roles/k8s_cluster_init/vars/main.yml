@@ -1,0 +1,22 @@
+---
+# vars file for k8s_master
+# service_names:
+#   - "docker"
+#   - "kubelet"
+
+k8s_worker_01: k8sworker01
+worker_01_public_dns: ec2-65-0-131-112.ap-south-1.compute.amazonaws.com
+worker_01_public_address: 65.0.131.112
+worker_01_private_address: 10.10.0.14
+
+k8s_worker_02: k8sworker02
+worker_02_public_dns: ec2-3-111-53-179.ap-south-1.compute.amazonaws.com
+worker_02_public_address: 3.111.53.179
+worker_02_private_address: 10.10.0.35
+
+#########################################
+# Master Node Addressess
+k8s_master_01: k8smaster01
+master_01_public_dns: ec2-3-110-156-105.ap-south-1.compute.amazonaws.com
+master_01_public_address: 3.110.156.105 
+master_01_private_address: 10.10.0.49

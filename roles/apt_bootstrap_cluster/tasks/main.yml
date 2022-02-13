@@ -1,0 +1,382 @@
+---
+# tasks file for bootstrap_cluster
+
+# Tasks for bootstrapping the cluster
+
+#Objectives
+#Install a single control-plane Kubernetes cluster
+#Install a Pod network on the cluster so that your Pods can talk to each other
+
+# Initializing your control-plane node ( MASTER )
+# (Recommended) If you have plans to upgrade this single control-plane kubeadm cluster to high 
+# availability you should specify the --control-plane-endpoint to set 
+# the shared endpoint for all control-plane nodes.
+# Such an endpoint can be either a DNS name or an IP address of a load-balancer
+
+# nginx LB IP = 192.168.50.117
+
+################################################
+##      Download and configure ETCd           ##
+################################################
+# We must download the /etcd binaries and place them in the relvent directories 
+# and copy some certificates for etcd to use
+
+# Get etcd binaries:
+
+ #It was discovered that by having firewalld enabled when launching flannel pods, the cluster did not start properly 
+#- name: Disable firewalld
+#  service:
+#    name: firewalld
+#    state: stopped
+#  tags:
+#    - kubeadm_reset
+#    - kubeadm_init
+
+ #Delete nodes
+- name: Delete nodes
+  shell: kubectl delete nodes --all
+  when: "'masters' in group_names"
+  ignore_errors: true
+  tags:
+    - delete_nodes
+    - kubeadm_init
+
+# Remove old iptables rules and cni interface
+- name: Remove old iptables rules and delete cni interface
+  shell: "{{ item }}"
+  loop:
+    - iptables -F
+    - iptables -t nat -F
+    - iptables -t mangle -F
+    - iptables -X
+    - ip link set cni0 down
+    - sudo brctl delbr cni0
+  ignore_errors: true
+  tags:
+    - delete_nodes
+    - kubeadm_init
+
+# Make it so iptables is configured to allow flannel and coredns pods to start and add iptables rules
+- name: iptables default policies need to be ACCEPT on all chains
+  iptables:
+    chain: '{{item}}'
+    policy: ACCEPT
+  with_items:
+  - INPUT
+  - FORWARD
+  - OUTPUT
+  tags:
+    - kubeadm_init
+
+# when the above issue is encountred it is neccessary to remove these files
+- name: Clean up cluster and etcd and cni
+  file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /var/lib/etcd
+    - /home/k8sadmin/.kube
+    - /root/.kube
+    - /etc/cni/net.d
+  tags:
+    - kubeadm_reset
+    - kubeadm_init
+
+
+# Install and configure etcd
+- name: Download etcd version
+  get_url:
+    url: https://github.com/etcd-io/etcd/releases/download/v3.4.15/etcd-v3.4.15-linux-arm64.tar.gz
+    dest: /home/k8sadmin
+  when: "'masters' in group_names"
+  tags:
+    - etcd
+    - kubeadm_init
+  
+# Untar the binaries
+- name: Untar the binary
+  unarchive:
+    src: /home/k8sadmin/etcd-v3.4.15-linux-arm64.tar.gz
+    dest: /home/k8sadmin
+    remote_src: yes
+  when: "'masters' in group_names"
+  tags:
+    - etcd
+    - kubeadm_init
+
+# Copy the etcd  binaries to /usr/local/bin path
+- name: Move etcd-v3.4.15-linux-amd64/etcd* contensts to /usr/local/bin
+  copy:
+    src: "{{ item.src }}"
+    dest: /usr/local/bin
+    remote_src: yes
+    mode: '0755'
+  with_items:
+    - { src: /home/k8sadmin/etcd-v3.4.15-linux-arm64/etcd }
+    - { src: /home/k8sadmin/etcd-v3.4.15-linux-arm64/etcdctl }
+  when: "'masters' in group_names"
+  tags:
+    - etcd
+    - kubeadm_init
+
+# Create extra directories for etcd
+- name: make /etc/etcd and /var/lib/etcd directories
+  file:
+    path: "{{ item.path }}"
+    state: directory
+  with_items:
+    - { path: /etc/etcd }
+    - { path: /var/lib/etcd }
+  when: "'masters' in group_names"
+  tags:
+    - etcd
+    - kubeadm_init
+
+# Copy certs
+- name: Copy certifactes and keys to /etc/etcd
+  copy:
+    src: "{{ item.src }}"
+    dest: /etc/etcd
+    remote_src: yes
+  with_items:
+    - { src: /home/k8sadmin/ca.pem }
+    - { src: /home/k8sadmin/k8s-master.pem }
+    - { src: /home/k8sadmin/k8smasterkey.pem }
+  when: "'masters' in group_names"
+  tags:
+    - etcd
+    - kubeadm_init
+
+# The following steps configure the etcd daemon for systemd to start on startup
+
+# Place a j2 template into /etc/systemd/system/etcd.service using variables
+- name: Create systemd etcd service
+  template:
+    src: etcd.service.j2
+    dest: /etc/systemd/system/etcd.service
+  when: "'masters' in group_names"
+  tags:
+    - etcd
+    - kubeadm_init
+
+# Daemon reload so systemd can use the new service
+- name: Daemon reload so systemd can use the new service
+  systemd:
+    daemon_reload: yes
+  when: "'masters' in group_names"
+  tags:
+    - etcd
+    - kubeadm_init
+
+# Start and enabled etcd service
+- name: Start and enable the etcd service
+  service:
+    name: etcd
+    state: started
+    enabled: yes
+  when: "'masters' in group_names"
+  tags:
+    - etcd
+    - kubeadm_init
+
+################################################
+##      Configure control plane  and workers  ##
+################################################
+
+# Reset kubeadm
+- name: Reset kubeadm
+  shell: kubeadm reset --force
+  tags:
+    - kubeadm_reset
+    - kubeadm_init
+  when: "'workers' or 'masters' in group_names"
+
+- name: Copy kubeconfig for initializing the cluster
+  template:
+    src: cluster.kubeconfig.j2
+    dest: /home/k8sadmin/cluster.kubeconfig
+  when: "'masters' in group_names"
+  tags:
+    - kubeadm_init 
+
+- name: kubeadm init
+  shell: kubeadm init --config /home/k8sadmin/cluster.kubeconfig
+  when: "'masters' in group_names"
+  tags:
+    - kubeadm_init
+
+- name: Create $HOME/.kube directory
+  file:
+    path: "{{ item }}"
+    state: directory
+  loop:
+    - /home/k8sadmin/.kube
+    - /root/.kube
+  when: "'masters' or 'workers' in group_names"
+  tags:
+    - kubeadm_init
+
+- name: Copy admin config to k8sadmin
+  copy: 
+    src: /etc/kubernetes/admin.conf
+    dest: "{{ item }}"
+    owner: k8sadmin
+    group: k8sadmin
+    remote_src: yes
+  loop:
+    - /home/k8sadmin/.kube/config
+    - /root/.kube/config
+  when: "'masters' in group_names"
+  tags:
+    - kubeadm_init
+
+- name: Gather admin.conf
+  find:
+    paths: /home/k8sadmin/.kube/
+    recurse: no
+    patterns: "config"
+  register: files_to_copy
+  when: "'masters' in group_names"
+  tags:
+    - kubeadm_init
+
+- name: Fetch admin.conf to ansible controller
+  fetch:
+    src: "{{ item.path }}"
+    dest: roles/bootstrap_cluster/files/
+    flat: yes
+  with_items: "{{ files_to_copy.files }}"
+  when: "'masters' in group_names"
+  tags:
+    - kubeadm_init
+
+- name: Distribute admin.conf to workers
+  copy:
+    src: "{{ item.src }}"
+    dest: "/home/k8sadmin/.kube/config"
+    owner: k8sadmin
+    group: k8sadmin
+  with_items:
+    - { src: config }
+  when: "'workers' in group_names"
+  tags:
+    - kubeadm_init
+
+# Create a join token and hash of the ca and parse out token and hash into their respctive variables
+- name: Create token and hash ans parse them out
+  shell: kubeadm token create --print-join-command > join.txt
+  #register: results
+  when: "'masters' in group_names"
+  tags:
+    - kubeadm_init
+    - token
+
+- name: Parse join file for token and create token variable
+  shell: "cat join.txt | awk '{ print $5 }'"
+  register: token
+  when: "'masters' in group_names"
+  tags:
+    - kubeadm_init
+    - token
+
+- name: Create token var
+  set_fact:
+    token: "{{ token.stdout }}"
+  when: "'masters' in group_names"
+  tags:
+    - kubeadm_init
+    - token
+
+- name: Output token variable
+  debug:
+    var: token
+  when: "'masters' in group_names"
+  tags:
+    - kubeadm_init
+    - token
+
+- name: Parse join file for hash and create hash variable
+  shell: "cat join.txt | awk '{ print $7 }'"
+  register: hash
+  when: "'masters' in group_names"
+  tags:
+    - kubeadm_init
+    - token
+
+- name: Create token var
+  set_fact:
+    hash: "{{ hash.stdout }}"
+  when: "'masters' in group_names"
+  tags:
+    - kubeadm_init
+    - token
+
+- name: Output hash variable
+  debug:
+    var: hash
+  when: "'masters' in group_names"
+  tags:
+    - kubeadm_init
+    - token
+
+- name: add token and hash to dummy host to pass facts between hosts
+  add_host:
+    name: "192.168.50.240"
+    token: "{{ token }}"
+    hash: "{{ hash }}"
+  tags:
+    - kubeadm_init
+
+# Copy kube-flannel.yml config to host
+- name: Copy kube-flannel.yml to host
+  template:
+    src: kube-flannel.j2
+    dest: /home/k8sadmin/kube-flannel.yml  
+  when: "'masters' in group_names"
+  tags:
+    - kubeadm_init
+
+# Apply pod network with Flannel
+- name: Apply flannel
+  shell: kubectl apply -f /home/k8sadmin/kube-flannel.yml
+  when: "'masters' in group_names"
+  tags:
+    - kubeadm_init
+
+# Join worker nodes
+
+- name: Join worker nodes to cluster
+  shell: |
+    kubeadm join 192.168.50.117:6443 \
+    --token "{{ hostvars['192.168.50.240']['token'] }}" \
+    --discovery-token-ca-cert-hash "{{ hostvars['192.168.50.240']['hash'] }}"
+  when: "'workers' in group_names"
+  tags:
+    - kubeadm_init
+    - join
+
+- name: Sleep for 1 minute to give pods time to come up
+  wait_for:
+    timeout: 60
+  delegate_to: localhost
+  tags:
+    - kubeadm_init
+
+- name: Restart containerd incase cni0 didnt get created
+  service:
+    name: containerd
+    state: restarted
+  when: "'workers' in group_names"
+  tags:
+    - kubeadm_init
+    
+# Join control nodes
+#- name: Join other control nodes to cluster
+#  shell: |
+#    kubeadm join 192.168.50.117:6443 \
+#    --token {{ token.stdout }} \
+#    --discovery-token-ca-cert-hash sha256:0ea3240343360022ebe06d56dc4d993ff9087c2a2910c7a238c95416596582f7 \
+#    --control-plane 
+
+#kubectl apply -f https://raw.githubusercontent.com/kubernetes/dashboard/v2.2.0/aio/deploy/recommended.yaml
+

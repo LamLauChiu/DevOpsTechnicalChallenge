@@ -1,0 +1,1 @@
+while true; do docker stats --no-stream | tee --append stats.txt; sleep 10; done

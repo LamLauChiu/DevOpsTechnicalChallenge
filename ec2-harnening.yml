@@ -1,0 +1,25 @@
+- name: ec2 security hardening
+  become: true
+  vars:
+    allowed_ssh_networks:
+      - 192.168.122.0/24
+      - 10.10.10.0/24
+    unnecessary_services:
+      - postfix
+      - telnet
+    unnecessary_software:
+      - tcpdump
+      - nmap-ncat
+      - wpa_supplicant
+  tasks:
+  hosts: ec2
+  roles:
+    - hardening
+  handlers:
+  - name: Reload SSH
+    service:
+      name: sshd
+      state: reloaded
+
+
+# https://github.com/dev-sec/ansible-collection-hardening/tree/master/roles/os_hardening

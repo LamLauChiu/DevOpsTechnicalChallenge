@@ -1,0 +1,27 @@
+- hosts: localhost
+  # vars_files:
+  #     - cred.yml
+  gather_facts: no
+  tasks:
+    - name: Create a Directory for storage output 
+      become: yes
+      file:
+        path: /Users/lauchiulam/Projects/DevOpsTechnicalChallenge/output/
+        state: directory
+  
+    - name: Download output txt file by get_url
+      become: yes
+      get_url:
+        url: http://ec2-3-110-168-180.ap-south-1.compute.amazonaws.com/
+        dest: /Users/lauchiulam/Projects/DevOpsTechnicalChallenge/output/file.txt
+        timeout: 20
+
+    - name: Count for the words that occurred the most times on the default welcome page
+      shell: python3 /Users/lauchiulam/Projects/DevOpsTechnicalChallenge/wordsCount.py
+      register: counted_output
+
+    - name: save counted_output
+      local_action:
+        module: copy
+        content: "{{ counted_output.stdout }}"
+        dest: "/Users/lauchiulam/Projects/DevOpsTechnicalChallenge/output/counted_output.txt" 

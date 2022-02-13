@@ -1,0 +1,84 @@
+---
+
+# tasks file for kubeadm_install
+###############################
+###         Pre-reqs        ###
+###############################
+
+# Check to see if these exist. If they do remove them. Not removing them will cause issues for every run of this playbook after the first
+- name: Remove existing gpg keys and repos to prevent issues
+  file:
+    path: "{{ item.path }}"
+    state: absent
+  with_items:
+    - { path: /etc/apt/sources.list.d/kubernetes.list }
+    - { path: /usr/share/keyrings/kubernetes-archive-keyring.gpg }
+    - { path: /etc/apt/sources.list.d/docker.list }
+    - { path: /usr/share/keyrings/docker-archive-keyring.gpg }
+    
+# tasks file for Node
+- name: Add kubeadm repositories on Node
+  yum_repository:
+    name: kube
+    description: Kubernetes repo
+    baseurl: https://packages.cloud.google.com/yum/repos/kubernetes-el7-$basearch
+    enabled: 1
+    gpgcheck: 1
+    gpgkey: https://packages.cloud.google.com/yum/doc/yum-key.gpg https://packages.cloud.google.com/yum/doc/rpm-package-key.gpg
+
+- name: Installing Docker & kubeadm on Node
+  package:
+    name:
+      - docker
+      - kubeadm
+      - iproute-tc
+    state: present
+
+- name: Staring & enabling Docker & kubelet on Node
+  service:
+    name: docker
+    state: started
+    enabled: yes
+  loop: "{{ service_names }}"
+
+- name: Updating Docker cgroup on Master Node
+  copy:
+    dest: /etc/docker/daemon.json
+    content: |
+      {
+      "exec-opts": ["native.cgroupdriver=systemd"]
+      }
+
+- name: Restart docker on Master Node
+  service:
+    name: docker
+    state: restarted
+
+# - name: Pulling the images of k8s master
+#   command: kubeadm config images pull
+
+# - name: Initializing k8s cluster
+#   command: kubeadm init --pod-network-cidr=10.244.0.0/16 --ignore-preflight-errors=NumCPU --ignore-preflight-errors=Mem
+
+# - name: Setting up kubectl on Master Node
+#   shell:
+#     cmd: |
+#       mkdir -p $HOME/.kube
+#       sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+#       sudo chown $(id -u):$(id -g) $HOME/.kube/config
+
+# - name: Deploying Flannel on Master Node
+#   command: kubectl apply -f https://raw.githubusercontent.com/coreos/flannel/master/Documentation/kube-flannel.yml
+
+# - name: Creating token for Slave
+#   command: kubeadm token create  --print-join-command
+#   register: token
+
+# - name: Cleaning Caches on RAM
+#   shell: echo 3 > /proc/sys/vm/drop_caches
+
+
+# - name: Creating the directory
+#   file:
+#     name: "$HOME/.kube"
+#     state: directory

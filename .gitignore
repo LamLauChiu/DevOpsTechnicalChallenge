@@ -2,5 +2,6 @@
 *.retry
 *.vault
 rootkey.csv
-aws.key.pem
+*.pem
 venv
+backup/*

@@ -1,0 +1,103 @@
+# ---
+# tasks file for sample-nginx-app
+# - name: installing podman
+#   package:
+#     name: "podman"
+#     state: present
+
+# - name: pull an image
+#   containers.podman.podman_image:
+#     name: quay.io/jitesoft/nginx
+
+# - name: deploy a web server
+#   k8s:
+#     api_version: v1
+#     namespace: my-namespace
+#     definition:
+#       kind: Deployment
+#       metadata:
+#         labels:
+#           app: nginx
+#         name: nginx-deploy
+#       spec:
+#         replicas: 1
+#         selector:
+#           matchLabels:
+#             app: nginx
+#         template:
+#           metadata:
+#             labels:
+#               app: nginx
+#           spec:
+#             containers:
+#               - name: my-webserver
+#                 image: quay.io/jitesoft/nginx
+#                 ports:
+#                   - containerPort: 80
+#                     protocol: TCP
+# playbook.yml
+---
+
+- name: "Installing docker library in base os"
+  pip:
+    name: docker
+    state: present
+
+- name: Installing Docker
+  package:
+    name:
+      - docker
+      - iproute-tc
+    state: present
+
+- name: Staring & enabling Docker
+  service:
+    name: docker
+    state: started
+    enabled: yes
+
+- name: Updating Docker cgroup on Master Node
+  copy:
+    dest: /etc/docker/daemon.json
+    content: |
+      {
+      "exec-opts": ["native.cgroupdriver=systemd"]
+      }
+
+- name: Restart docker on Master Node
+  service:
+    name: docker
+    state: restarted
+
+
+- name: Copy Dockerfile to host
+  copy:
+    src: "/Users/lauchiulam/Projects/DevOpsTechnicalChallenge/roles/sample-docker-nginx-app/templates/Dockerfile"
+    dest: "/home/ec2-user/"
+    # owner: "{{userId}}"
+    # group: "{{groupId}}"
+    # remote_src: yes
+    # mode: 0755
+
+- name: Build an nginx image with health check curl
+  community.docker.docker_image:
+    build:
+      path: /home/ec2-user/
+    name: nginx-health-check
+    tag: v1
+    #push: yes
+    source: build
+
+- name: deploy and start nginx docker container
+  docker_container:
+    # image: nginx:stable
+    image: nginx-health-check:v1
+    name: nginx
+    state: started
+    auto_remove: true
+    ports:
+      - "80:80"
+
+
+
+

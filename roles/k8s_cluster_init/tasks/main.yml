@@ -1,0 +1,228 @@
+---
+# - name: Setting up kubectl on Master Node
+#   shell:
+#     cmd: |
+#       mkdir -p $HOME/.kube
+#       sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+#       sudo chown $(id -u):$(id -g) $HOME/.kube/config
+
+# - name: Deploying Flannel on Master Node
+#   command: kubectl apply -f https://raw.githubusercontent.com/coreos/flannel/master/Documentation/kube-flannel.yml
+
+# - name: Creating token for Slave
+#   command: kubeadm token create  --print-join-command
+#   register: token
+
+# - name: Cleaning Caches on RAM
+#   shell: echo 3 > /proc/sys/vm/drop_caches
+
+
+# - name: Creating the directory
+#   file:
+#     name: "$HOME/.kube"
+#     state: directory
+
+
+################################################
+##      Configure control plane  and workers  ##
+################################################
+
+# Reset kubeadm
+- name: Reset kubeadm
+  shell: kubeadm reset --force
+  tags:
+    - kubeadm_reset
+    - kubeadm_init
+  when: "'workerNode' or 'masterNode' in group_names"
+
+- name: Pulling the images of k8s master
+  command: kubeadm config images pull
+
+# - name: Copy kubeconfig for initializing the cluster
+#   template:
+#     src: cluster.kubeconfig.j2
+#     dest: /home/ec2-user/cluster.kubeconfig
+#   when: "'masterNode' in group_names"
+#   tags:
+#     - kubeadm_init 
+
+- name: Initializing k8s cluster
+  command: kubeadm init --pod-network-cidr=10.244.0.0/16 --ignore-preflight-errors=NumCPU --ignore-preflight-errors=Mem
+  when: "'masterNode' in group_names"
+  tags:
+    - kubeadm_init
+
+# - name: kubeadm init
+#   shell: kubeadm init --config /home/ec2-user/cluster.kubeconfig
+#   when: "'masters' in group_names"
+#   tags:
+#     - kubeadm_init
+
+- name: Create $HOME/.kube directory
+  file:
+    path: "{{ item }}"
+    state: directory
+  loop:
+    - /home/ec2-user/.kube
+    - /root/.kube
+  when: "'workerNode' or 'masterNode' in group_names"
+  tags:
+    - kubeadm_init
+
+- name: Copy admin config to ec2-user
+  copy: 
+    src: /etc/kubernetes/admin.conf
+    dest: "{{ item }}"
+    owner: ec2-user
+    group: ec2-user
+    remote_src: yes
+  loop:
+    - /home/ec2-user/.kube/config
+    - /root/.kube/config
+  when: "'masterNode' in group_names"
+  tags:
+    - kubeadm_init
+
+- name: Gather admin.conf
+  find:
+    paths: /home/ec2-user/.kube/
+    recurse: no
+    patterns: "config"
+  register: files_to_copy
+  when: "'masterNode' in group_names"
+  tags:
+    - kubeadm_init
+
+- name: Fetch admin.conf to ansible controller
+  fetch:
+    src: "{{ item.path }}"
+    dest: roles/k8s_cluster_init/templates/
+    flat: yes
+  with_items: "{{ files_to_copy.files }}"
+  when: "'masterNode' in group_names"
+  tags:
+    - kubeadm_init
+
+- name: Distribute admin.conf to workers
+  copy:
+    src: "{{ item.src }}"
+    dest: "/home/ec2-user/.kube/config"
+    owner: ec2-user
+    group: ec2-user
+  with_items:
+    - { src: /Users/lauchiulam/Projects/DevOpsTechnicalChallenge/roles/k8s_cluster_init/templates/config }
+  when: "'workerNode' in group_names"
+  tags:
+    - kubeadm_init
+
+# Create a join token and hash of the ca and parse out token and hash into their respctive variables
+- name: Create token and hash ans parse them out
+  shell: kubeadm token create --print-join-command > join.txt
+  #register: results
+  when: "'masterNode' in group_names"
+  tags:
+    - kubeadm_init
+    - token
+
+- name: Parse join file for token and create token variable
+  shell: "cat join.txt | awk '{ print $5 }'"
+  register: token
+  when: "'masterNode' in group_names"
+  tags:
+    - kubeadm_init
+    - token
+
+- name: Create token var
+  set_fact:
+    token: "{{ token.stdout }}"
+  when: "'masterNode' in group_names"
+  tags:
+    - kubeadm_init
+    - token
+
+- name: Output token variable
+  debug:
+    var: token
+  when: "'masterNode' in group_names"
+  tags:
+    - kubeadm_init
+    - token
+
+- name: Parse join file for hash and create hash variable
+  shell: "cat join.txt | awk '{ print $7 }'"
+  register: hash
+  when: "'masterNode' in group_names"
+  tags:
+    - kubeadm_init
+    - token
+
+- name: Create token var
+  set_fact:
+    hash: "{{ hash.stdout }}"
+  when: "'masterNode' in group_names"
+  tags:
+    - kubeadm_init
+    - token
+
+- name: Output hash variable
+  debug:
+    var: hash
+  when: "'masterNode' in group_names"
+  tags:
+    - kubeadm_init
+    - token
+
+- name: add token and hash to dummy host to pass facts between hosts
+  add_host:
+    name: "{{ master_01_public_dns }}"
+    token: "{{ token }}"
+    hash: "{{ hash }}"
+  tags:
+    - kubeadm_init
+
+# Copy kube-flannel.yml config to host
+- name: Copy kube-flannel.yml to host
+  template:
+    src: roles/k8s_cluster_init/templates/kube-flannel.j2
+    dest: /home/ec2-user/kube-flannel.yml  
+  when: "'masterNode' in group_names"
+  tags:
+    - kubeadm_init
+
+# Apply pod network with Flannel
+- name: Apply flannel
+  shell: kubectl apply -f /home/ec2-user/kube-flannel.yml
+  when: "'masterNode' in group_names"
+  tags:
+    - kubeadm_init
+
+# Join worker nodes
+- name: " Join worker nodes to cluster"
+  shell: "{{ token }}"
+  when: "'masterNode' in group_names"
+  ignore_errors: true
+
+# - name: Join worker nodes to cluster
+#   shell: |
+#     kubeadm join 192.168.50.117:6443 \
+#     --token "{{ hostvars['3.110.156.105']['token'] }}" \
+#     --discovery-token-ca-cert-hash "{{ hostvars['3.110.156.105']['hash'] }}"
+#   when: "'workerNode' in group_names"
+#   tags:
+#     - kubeadm_init
+#     - join
+
+- name: Sleep for 1 minute to give pods time to come up
+  wait_for:
+    timeout: 60
+  delegate_to: localhost
+  tags:
+    - kubeadm_init
+
+- name: Restart containerd incase cni0 didnt get created
+  service:
+    name: containerd
+    state: restarted
+  when: "'masterNode' in group_names"
+  tags:
+    - kubeadm_init

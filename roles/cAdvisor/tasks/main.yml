@@ -1,0 +1,29 @@
+---
+# tasks file for cAdvisor
+- name: Deploy Container Advisor
+  docker:
+    name: cadvisor
+    image: gcr.io/google-containers/cadvisor:latest
+    state: started
+    pull: always
+    detach: true
+    ports:
+    - "8080:8080"
+    volumes:
+    - /rootfs:ro
+    - /var/run:/var/run:ro
+    - volume=/sys:/sys:ro \
+    - volume=/var/lib/docker/:/var/lib/docker:ro
+    - volume=/dev/disk/:/dev/disk:ro
+
+
+# docker run \
+#   --volume=/:/rootfs:ro \
+#   --volume=/var/run:/var/run:ro \
+#   --volume=/sys:/sys:ro \
+#   --volume=/var/lib/docker/:/var/lib/docker:ro \
+#   --volume=/dev/disk/:/dev/disk:ro \
+#   --publish=8080:8080 \
+#   --detach=true \
+#   --name=cadvisor \
+#   gcr.io/google-containers/cadvisor:latest

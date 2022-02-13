@@ -1,0 +1,22 @@
+- hosts: localhost
+  gather_facts: no
+  tasks:
+    - name: Running EC2 Role
+      include_role:
+        name: ec2_instances
+
+- name: call roles
+  hosts: all
+  become: true
+  roles:
+  - { role: configure_hosts }
+  - { role: k8s_kubeadm_install }
+  - { role: k8s_cluster_init }
+
+- name: sample nginx app
+  hosts: demo-ec2
+  become: true
+  roles:
+  - { role: sample-docker-nginx-app }
+  
+  

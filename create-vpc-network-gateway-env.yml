@@ -1,0 +1,26 @@
+# vpc.yml
+---
+# playbook that runs our VPC tasks for any hosts in the `vpc` group, providing AWS credentials in the environment 
+# https://www.infinitypp.com/ansible/create-vpc-ansible-aws/
+# https://github.com/infinitypp/ansible-aws-vpc-playbook
+
+- hosts: vpc
+  vars: #local connection defaults to using the system python
+    ansible_python_interpreter: /Users/lauchiulam/Projects/DevOpsTechnicalChallenge/venv/bin/python3
+  vars_files: 
+    - roles/vpc-network-gateway-setup/vars/cred.yml
+    - roles/vpc-network-gateway-setup/vars/main.yml
+    - roles/vpc-network-gateway-setup/vars/vpc.ansibled.yml
+  environment:
+    AWS_ACCESS_KEY_ID: "{{ aws_access_key }}"
+    AWS_SECRET_ACCESS_KEY: "{{ aws_secret_key }}"
+    AWS_REGION: "{{ aws_region }}"
+  tasks:
+    - include_tasks: /Users/lauchiulam/Projects/DevOpsTechnicalChallenge/roles/vpc-network-gateway-setup/tasks/main.yml
+    # - include_tasks: /Users/lauchiulam/Projects/DevOpsTechnicalChallenge/roles/vpc-network-gateway-setup/tasks/setup-vpc.yml
+    # - include_tasks: /Users/lauchiulam/Projects/DevOpsTechnicalChallenge/roles/vpc-network-gateway-setup/tasks/setup-gateways.yml
+    # - include_tasks: /Users/lauchiulam/Projects/DevOpsTechnicalChallenge/roles/vpc-network-gateway-setup/tasks/facts.yml
+
+- hosts: ec2
+  tasks:
+    - include_tasks: /Users/lauchiulam/Projects/DevOpsTechnicalChallenge/roles/vpc-network-gateway-setup/tasks/insatll-nginx.yml

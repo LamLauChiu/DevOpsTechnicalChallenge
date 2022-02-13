@@ -1,0 +1,66 @@
+---
+# https://code-maven.com/install-and-configure-nginx-using-ansible
+# Remove 
+# - name: stop nginx
+#   service:
+#       name: nginx
+#       state: stopped
+
+# - name: ensure nginx is not installed
+#   apt: name=nginx state=absent
+
+# Install
+# - name: Add epel-release repo
+#   yum:
+#     name: epel-release
+#     state: present
+
+# - name: ensure nginx is at the latest version
+#   yum: name=nginx state=latest
+#   become: true
+
+- name: Install nginx web server
+  command: amazon-linux-extras install nginx1.12=latest -y
+  args:
+    creates: /sbin/nginx
+  become: true
+#   yum:
+#     name: nginx
+#     state: installed  
+#     update_cache: yes
+#   notify:
+#     - start nginx
+
+
+
+- name: start nginx
+  service:
+    name: nginx
+    state: started
+  become: true
+
+# - name: copy the nginx config file and restart nginx
+#   copy:
+#     src: /home/foo/static_site.cfg
+#     dest: /etc/nginx/sites-available/static_site.cfg
+#   become: true
+
+# - name: create symlink
+#   file:
+#     src: /etc/nginx/sites-available/static_site.cfg
+#     dest: /etc/nginx/sites-enabled/default
+#     state: link
+#   become: true
+
+# - name: copy the content of the web site
+#   copy:
+#     src: /home/foo/static-site-src/
+#     dest: /home/foo/static-site
+
+- name: restart nginx
+  service:
+    name: nginx
+    state: restarted
+  become: true
+
+
