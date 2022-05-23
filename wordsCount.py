@@ -27,3 +27,4 @@ if __name__ == "__main__":
         str_list = str.split()
         counts = Counter(str_list).most_common(2)
         print(counts)
+
